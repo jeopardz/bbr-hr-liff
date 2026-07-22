@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ลงเวลา / ลงทะเบียน</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f23;--muted:#6b7280;--line:#e5e7eb;--brand:#06c755;--brand2:#05a648;--danger:#dc2626;--warn-bg:#fef3c7;--warn-fg:#92400e;--r:16px}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1113;--card:#191c1f;--fg:#e8eaed;--muted:#9aa0a6;--line:#2a2e33;--warn-bg:#3a2f10;--warn-fg:#fcd34d}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans Thai','Sarabun',Roboto,sans-serif;-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+#app{width:100%;max-width:420px}.hidden{display:none!important}
+.card{background:var(--card);border-radius:var(--r);padding:28px 20px 20px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+h1{font-size:1.25rem;font-weight:700;margin:8px 0 4px;line-height:1.35}
+.muted{color:var(--muted);font-size:.9rem;line-height:1.6;margin:8px 0}
+.badge{display:inline-block;font-size:.85rem;font-weight:600;padding:5px 14px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
+.clock{font-size:2.75rem;font-weight:700;letter-spacing:-.02em;margin:4px 0 16px;font-variant-numeric:tabular-nums}
+.facts{margin:0 0 16px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);text-align:left}
+.facts>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0}
+.facts dt{color:var(--muted);font-size:.85rem;flex:none;margin:0}.facts dd{margin:0;font-size:.9rem;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.accuracy{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums;min-height:1.3em}
+.warn{background:var(--warn-bg);color:var(--warn-fg);font-size:.875rem;line-height:1.6;text-align:left;padding:12px 14px;border-radius:10px;margin:0 0 16px}
+.field{text-align:left;margin:0 0 16px}.field label{display:block;font-size:.85rem;font-weight:600;margin:0 0 6px}
+.field select,.field input{width:100%;padding:13px 14px;font-size:1rem;font-family:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
+.field input{letter-spacing:.3em;text-align:center;font-size:1.4rem}.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:15px;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background .15s,opacity .15s}
+.btn+.btn{margin-top:10px}.btn.primary{background:var(--brand);color:#fff}.btn.primary:active:not(:disabled){background:var(--brand2)}
+.btn.primary:disabled{opacity:.4;cursor:not-allowed}.btn.ghost{background:transparent;color:var(--muted);font-weight:600}.btn.ghost:active{background:var(--bg)}
+.icon{width:64px;height:64px;margin:0 auto 4px;border-radius:50%;display:grid;place-items:center;font-size:2rem;font-weight:700;color:#fff}
+.icon.ok{background:var(--brand)}.icon.bad{background:var(--danger)}
+.spinner{width:34px;height:34px;margin:8px auto 12px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation-duration:2s}}
+</style>
+</head>
+<body>
+<main id="app">
+  <section class="card" data-state="init"><div class="spinner"></div><p class="muted">กำลังเตรียมระบบ…</p></section>
+
+  <section class="card hidden" data-state="register">
+    <h1>ลงทะเบียนพนักงาน</h1>
+    <p class="muted">ผูกบัญชี LINE นี้เข้ากับชื่อของคุณ<br>ทำครั้งเดียวต่อเครื่องค่ะ</p>
+    <div class="field"><label for="emp">คุณคือใครคะ</label><select id="emp"><option value="">— เลือกชื่อ —</option></select></div>
+    <div class="field"><label for="pin">PIN 6 หลัก</label><input id="pin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off"><p class="hint">PIN ที่พี่นุชให้ไว้ค่ะ</p></div>
+    <p class="warn hidden" id="reg-warn"></p>
+    <button class="btn primary" id="btn-link" disabled>ลงทะเบียน</button>
+  </section>
+
+  <section class="card hidden" data-state="locating"><div class="spinner"></div><h1>กำลังหาตำแหน่ง</h1><p class="muted">กรุณาอยู่กลางแจ้งหรือใกล้หน้าต่างเพื่อให้สัญญาณดีขึ้น</p><p class="accuracy" id="loc-acc"></p></section>
+
+  <section class="card hidden" data-state="ready">
+    <div class="badge" id="rd-badge">🟢 เช็คอิน</div>
+    <h1 id="rd-name">—</h1><div class="clock" id="rd-clock">--:--</div>
+    <dl class="facts"><div><dt>สถานที่</dt><dd id="rd-site">—</dd></div><div><dt>ระยะห่าง</dt><dd id="rd-dist">—</dd></div><div><dt>ความแม่นยำ</dt><dd id="rd-acc">—</dd></div></dl>
+    <p class="warn hidden" id="rd-warn"></p>
+    <button class="btn primary" id="btn-submit">ยืนยัน</button>
+    <button class="btn ghost" id="btn-retry">หาตำแหน่งใหม่</button>
+  </section>
+
+  <section class="card hidden" data-state="busy"><div class="spinner"></div><p class="muted" id="busy-msg">กำลังบันทึก…</p></section>
+
+  <section class="card hidden" data-state="done">
+    <div class="icon ok">✓</div><h1 id="done-title">เรียบร้อย</h1><div class="clock hidden" id="done-clock">--:--</div>
+    <p class="muted" id="done-detail"></p>
+    <button class="btn primary hidden" id="btn-go-checkin">ไปหน้าลงเวลา</button>
+    <button class="btn ghost" id="btn-close">ปิดหน้าต่าง</button>
+  </section>
+
+  <section class="card hidden" data-state="error">
+    <div class="icon bad">!</div><h1 id="err-title">เกิดข้อผิดพลาด</h1><p class="muted" id="err-detail"></p>
+    <button class="btn primary" id="btn-err-retry">ลองใหม่</button>
+    <button class="btn ghost" id="btn-err-close">ปิดหน้าต่าง</button>
+  </section>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+/* ===== config — inject ตอน build (LIFF_ID/API_URL ไม่ใช่ความลับ) ===== */
+var CFG = {
+  LIFF_ID: '2010765938-UTJZYzL0',
+  API_URL: 'https://n8n.bbr-backend.com/webhook/hr-api',
+  ACCURACY_TARGET_M: 30, ACCURACY_MAX_M: 100, GPS_TIMEOUT_MS: 15000
+};
+
+var $ = function(s){return document.querySelector(s)};
+var states = {}; document.querySelectorAll('[data-state]').forEach(function(el){states[el.dataset.state]=el});
+function show(n){Object.keys(states).forEach(function(k){states[k].classList.toggle('hidden',k!==n)})}
+function fail(t,d){$('#err-title').textContent=t;$('#err-detail').textContent=d||'';show('error')}
+function fmtTime(d){return new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
+function fmtM(m){if(m==null)return '—';return m<1000?Math.round(m)+' ม.':(m/1000).toFixed(2)+' กม.'}
+function distM(a,b,c,d){var R=6371000,r=function(x){return x*Math.PI/180},dLat=r(c-a),dLng=r(d-b);var q=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLng/2)*Math.sin(dLng/2);return 2*R*Math.asin(Math.sqrt(q))}
+
+/* same-origin กับ hr-api → ไม่มี CORS preflight */
+function api(action,body){
+  return fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(Object.assign({action:action},body))})
+    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+}
+
+var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null};
+
+function qp(k){return new URLSearchParams(location.search).get(k)}
+
+/* ---------- GPS ---------- */
+function acquire(onProg){
+  return new Promise(function(res,rej){
+    if(!navigator.geolocation){rej(new Error('อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง'));return}
+    var best=null,wid=null,tmr=null;
+    var fin=function(){if(wid!==null)navigator.geolocation.clearWatch(wid);if(tmr)clearTimeout(tmr);best?res(best):rej(new Error('หาตำแหน่งไม่สำเร็จ กรุณาลองใหม่กลางแจ้ง'))};
+    wid=navigator.geolocation.watchPosition(function(p){
+      if(!best||p.coords.accuracy<best.coords.accuracy){best=p;onProg&&onProg(p.coords.accuracy)}
+      if(best.coords.accuracy<=CFG.ACCURACY_TARGET_M)fin();
+    },function(e){
+      if(best){fin();return}
+      if(wid!==null)navigator.geolocation.clearWatch(wid);if(tmr)clearTimeout(tmr);
+      rej(new Error({1:'ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาเปิดสิทธิ์ให้ LINE ในตั้งค่าเครื่อง',2:'ไม่สามารถระบุตำแหน่งได้ กรุณาเปิด GPS แล้วลองใหม่',3:'หาตำแหน่งนานเกินไป กรุณาลองใหม่กลางแจ้ง'}[e.code]||'เกิดปัญหาในการระบุตำแหน่ง'));
+    },{enableHighAccuracy:true,timeout:CFG.GPS_TIMEOUT_MS,maximumAge:0});
+    tmr=setTimeout(fin,CFG.GPS_TIMEOUT_MS);
+  });
+}
+
+/* ---------- boot ---------- */
+function boot(){
+  show('init');
+  liff.init({liffId:CFG.LIFF_ID}).then(function(){
+    if(!liff.isLoggedIn()){liff.login({redirectUri:location.href});return}
+    app.idToken=liff.getIDToken();
+    if(!app.idToken){fail('ยืนยันตัวตนไม่สำเร็จ','กรุณาปิดหน้านี้ เข้าใหม่อีกครั้งค่ะ (LIFF ต้องเปิดสิทธิ์ openid)');return}
+    try{liff.getProfile().then(function(p){app.profileName=p&&p.displayName}).catch(function(){})}catch(e){}
+    return loadContext();
+  }).catch(function(){fail('เปิดระบบไม่สำเร็จ','กรุณาปิดหน้านี้แล้วลองใหม่อีกครั้งค่ะ')});
+}
+
+function loadContext(){
+  return api('context',{idToken:app.idToken}).then(function(ctx){
+    if(ctx.ok){app.ctx=ctx;return startCheckin()}
+    if(ctx.reason==='not_linked')return startRegister();
+    if(ctx.reason==='no_worksite')return fail('ยังตั้งค่าไม่เสร็จ','ยังไม่ได้ตั้งพิกัดออฟฟิศในระบบ กรุณาแจ้งพี่นุชค่ะ');
+    fail('ใช้งานไม่ได้',ctx.message||'กรุณาแจ้งพี่นุชค่ะ');
+  }).catch(function(){fail('เชื่อมต่อระบบไม่ได้','กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่ค่ะ')});
+}
+
+/* ---------- register ---------- */
+function regWarn(m){var w=$('#reg-warn');if(!m){w.classList.add('hidden');return}w.textContent=m;w.classList.remove('hidden')}
+function regValidate(){$('#btn-link').disabled=!($('#emp').value&&/^\d{6}$/.test($('#pin').value))}
+function startRegister(){
+  return api('employees',{idToken:app.idToken}).then(function(r){
+    if(!r.ok){fail('ใช้งานไม่ได้',r.reason==='invalid_token'?'ยืนยันตัวตนไม่ผ่าน กรุณาเข้าใหม่ค่ะ':'กรุณาแจ้งพี่นุชค่ะ');return}
+    var sel=$('#emp');
+    (r.employees||[]).forEach(function(e){var o=document.createElement('option');o.value=e.emp_code;o.textContent=e.display_name;sel.appendChild(o)});
+    show('register');
+  }).catch(function(){fail('เชื่อมต่อระบบไม่ได้','กรุณาลองใหม่อีกครั้งค่ะ')});
+}
+function doLink(){
+  regWarn('');$('#busy-msg').textContent='กำลังตรวจสอบ…';show('busy');
+  api('link',{idToken:app.idToken,empCode:$('#emp').value,pin:$('#pin').value,displayName:app.profileName}).then(function(r){
+    if(!r.ok){show('register');$('#pin').value='';regValidate();
+      regWarn({wrong_pin:'ชื่อหรือ PIN ไม่ถูกต้องค่ะ ลองตรวจดูอีกทีนะคะ',bad_pin_format:'PIN ต้องเป็นตัวเลข 6 หลักค่ะ',line_already_linked_to_other:'LINE นี้ผูกกับพนักงานคนอื่นไว้แล้วค่ะ รบกวนแจ้งพี่นุชนะคะ',invalid_token:'ยืนยันตัวตนไม่ผ่าน กรุณาเข้าใหม่ค่ะ'}[r.reason]||'ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่ค่ะ');return}
+    $('#done-title').textContent='ยินดีต้อนรับค่ะ 🎉';
+    $('#done-detail').textContent=(r.employee&&r.employee.name?r.employee.name+' ':'')+'ผูกบัญชีเรียบร้อยแล้ว';
+    $('#done-clock').classList.add('hidden');$('#btn-go-checkin').classList.remove('hidden');
+    show('done');
+  }).catch(function(){show('register');regWarn('เชื่อมต่อไม่ได้ กรุณาลองใหม่ค่ะ')});
+}
+
+/* ---------- check-in ---------- */
+function startCheckin(){
+  var q=qp('type');
+  if(q==='in'||q==='out')app.type=q==='in'?'check_in':'check_out';
+  else app.type=(app.ctx.today&&app.ctx.today.checkIn)?'check_out':'check_in';
+  var already=app.type==='check_in'?(app.ctx.today&&app.ctx.today.checkIn):(app.ctx.today&&app.ctx.today.checkOut);
+  if(already){
+    $('#done-title').textContent=app.type==='check_in'?'วันนี้เช็คอินแล้ว':'วันนี้เช็คเอาท์แล้ว';
+    $('#done-clock').textContent=fmtTime(new Date(already));$('#done-clock').classList.remove('hidden');
+    $('#done-detail').textContent='ไม่ต้องทำซ้ำ';$('#btn-go-checkin').classList.add('hidden');show('done');return;
+  }
+  return locate();
+}
+function locate(){
+  show('locating');$('#loc-acc').textContent='';
+  return acquire(function(a){$('#loc-acc').textContent='ความแม่นยำขณะนี้ ±'+Math.round(a)+' ม.'}).then(function(pos){app.pos=pos;renderReady()}).catch(function(e){fail('หาตำแหน่งไม่สำเร็จ',e.message)});
+}
+function renderReady(){
+  var c=app.pos.coords,s=app.ctx.worksite,d=distM(c.latitude,c.longitude,s.lat,s.lng),inF=d<=s.radiusM,accOk=c.accuracy<=CFG.ACCURACY_MAX_M;
+  $('#rd-badge').textContent=app.type==='check_in'?'🟢 เช็คอิน':'🔴 เช็คเอาท์';
+  $('#rd-name').textContent=app.ctx.employee.name;$('#rd-clock').textContent=fmtTime(new Date());
+  $('#rd-site').textContent=s.name;$('#rd-dist').textContent=fmtM(d)+' (อนุญาต '+fmtM(s.radiusM)+')';$('#rd-acc').textContent='±'+Math.round(c.accuracy)+' ม.';
+  var w=$('#rd-warn'),b=$('#btn-submit'),blk=null;
+  if(!accOk)blk='สัญญาณ GPS อ่อนเกินไป (±'+Math.round(c.accuracy)+' ม.) กรุณาออกไปกลางแจ้งแล้วกด "หาตำแหน่งใหม่"';
+  else if(!inF)blk='คุณอยู่นอกพื้นที่ที่อนุญาต (ห่าง '+fmtM(d)+') กรุณาเข้ามาในบริเวณ'+s.name;
+  if(blk){w.textContent=blk;w.classList.remove('hidden');b.disabled=true}else{w.classList.add('hidden');b.disabled=false}
+  show('ready');
+}
+function submitAtt(){
+  $('#busy-msg').textContent='กำลังบันทึก…';show('busy');var c=app.pos.coords;
+  api('attendance',{idToken:app.idToken,type:app.type,lat:c.latitude,lng:c.longitude,accuracy:c.accuracy,clientTs:new Date().toISOString(),ua:navigator.userAgent.slice(0,200)}).then(function(r){
+    if(!r.ok){fail('บันทึกไม่สำเร็จ',{out_of_fence:'อยู่นอกพื้นที่ที่อนุญาต (ห่าง '+fmtM(r.distanceM)+')',low_accuracy:'สัญญาณ GPS อ่อนเกินไป กรุณาลองใหม่กลางแจ้ง',duplicate:'วันนี้บันทึกไปแล้ว',not_linked:'ยังไม่ได้ผูกบัญชีพนักงาน'}[r.reason]||r.message||'กรุณาลองใหม่อีกครั้ง');return}
+    $('#done-title').textContent=app.type==='check_in'?'เช็คอินเรียบร้อย':'เช็คเอาท์เรียบร้อย';
+    $('#done-clock').textContent=fmtTime(new Date(r.ts));$('#done-clock').classList.remove('hidden');
+    $('#done-detail').textContent=r.worksiteName+' · ห่าง '+fmtM(r.distanceM);$('#btn-go-checkin').classList.add('hidden');show('done');
+  }).catch(function(){fail('บันทึกไม่สำเร็จ','กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่')});
+}
+
+function closeWin(){liff.isInClient()?liff.closeWindow():window.close()}
+
+$('#emp').addEventListener('change',regValidate);
+$('#pin').addEventListener('input',function(e){e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);regWarn('');regValidate()});
+$('#btn-link').addEventListener('click',doLink);
+$('#btn-submit').addEventListener('click',submitAtt);
+$('#btn-retry').addEventListener('click',locate);
+$('#btn-go-checkin').addEventListener('click',function(){loadContext()});
+$('#btn-close').addEventListener('click',closeWin);
+$('#btn-err-close').addEventListener('click',closeWin);
+$('#btn-err-retry').addEventListener('click',function(){location.reload()});
+
+boot();
+</script>
+</body>
+</html>
