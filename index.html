@@ -94,10 +94,19 @@ function withTimeout(p,ms,msg){
   return Promise.race([p, new Promise(function(_,rej){setTimeout(function(){rej(new Error(msg||'timeout'))},ms)})]);
 }
 function api(action,body){
-  var ctrl = typeof AbortController!=='undefined' ? new AbortController() : null;
-  var t = ctrl ? setTimeout(function(){ctrl.abort()},15000) : null;
-  return fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(Object.assign({action:action},body)),signal:ctrl?ctrl.signal:undefined})
-    .then(function(r){if(t)clearTimeout(t);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+  var payload = JSON.stringify(Object.assign({action:action},body));
+  // n8n host หลุดเป็นพักๆ (~8%) → ลองซ้ำอัตโนมัติ 3 ครั้ง
+  //   retry เฉพาะ network fail / gateway 5xx · engine ตอบ 200 เสมอ (logical error ไม่ retry)
+  function once(){
+    var ctrl = typeof AbortController!=='undefined' ? new AbortController() : null;
+    var t = ctrl ? setTimeout(function(){ctrl.abort()},12000) : null;
+    return fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:payload,signal:ctrl?ctrl.signal:undefined})
+      .then(function(r){if(t)clearTimeout(t);if(r.status>=500||r.status===0)throw new Error('gw'+r.status);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+  }
+  var delay=function(ms){return new Promise(function(res){setTimeout(res,ms)})};
+  return once()
+    .catch(function(){return delay(600).then(once)})
+    .catch(function(){return delay(1400).then(once)});
 }
 
 var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null};
