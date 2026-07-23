@@ -99,7 +99,7 @@ var states = {}; document.querySelectorAll('[data-state]').forEach(function(el){
 function show(n){Object.keys(states).forEach(function(k){states[k].classList.toggle('hidden',k!==n)})}
 function fail(t,d){$('#err-title').textContent=t;$('#err-detail').textContent=d||'';show('error')}
 function fmtTime(d){return new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
-function fmtM(m){if(m==null)return '—';return m<1000?Math.round(m)+' ม.':(m/1000).toFixed(2)+' กม.'}
+function fmtM(m){if(m==null)return '—';var u=L();return m<1000?Math.round(m)+' '+u.unitM:(m/1000).toFixed(2)+' '+u.unitKm}
 function distM(a,b,c,d){var R=6371000,r=function(x){return x*Math.PI/180},dLat=r(c-a),dLng=r(d-b);var q=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLng/2)*Math.sin(dLng/2);return 2*R*Math.asin(Math.sqrt(q))}
 
 /* text/plain = simple request → ไม่มี CORS preflight · engine ตอบ ACAO:* */
@@ -122,23 +122,85 @@ function api(action,body){
     .catch(function(){return delay(1400).then(once)});
 }
 
-var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null};
+var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null,lang:'th'};
+
+/* ===== i18n — หน้า check-in ตอบตามภาษาที่พนักงานเลือก (มาจาก context) ===== */
+var TT={
+  th:{
+    locating:'กำลังหาตำแหน่ง', locatingHint:'กรุณาอยู่กลางแจ้งหรือใกล้หน้าต่างเพื่อให้สัญญาณดีขึ้น',
+    accNow:function(a){return 'ความแม่นยำขณะนี้ ±'+a+' ม.'},
+    lblSite:'สถานที่', lblDist:'ระยะห่าง', lblAcc:'ความแม่นยำ', allow:function(x){return ' (อนุญาต '+x+')'},
+    badgeIn:'🟢 เช็คอิน', badgeOut:'🔴 เช็คเอาท์', btnConfirm:'ยืนยัน', btnRetry:'หาตำแหน่งใหม่',
+    saving:'กำลังบันทึก…', goCheckin:'ไปหน้าลงเวลา', close:'ปิดหน้าต่าง', errRetry:'ลองใหม่',
+    checkedIn:'เช็คอินเรียบร้อย', checkedOut:'เช็คเอาท์เรียบร้อย',
+    alreadyIn:'วันนี้เช็คอินแล้ว', alreadyOut:'วันนี้เช็คเอาท์แล้ว', noRepeat:'ไม่ต้องทำซ้ำ',
+    doneDetail:function(site,d){return site+' · ห่าง '+d}, unitM:'ม.', unitKm:'กม.',
+    weakGps:function(a){return 'สัญญาณ GPS อ่อนเกินไป (±'+a+' ม.) กรุณาออกไปกลางแจ้งแล้วกด "หาตำแหน่งใหม่"'},
+    outFence:function(d,name){return 'คุณอยู่นอกพื้นที่ที่อนุญาต (ห่าง '+d+') กรุณาเข้ามาในบริเวณ'+name},
+    lenient:function(inF,d){return (!inF?'อยู่นอกพื้นที่ (ห่าง '+d+') ':'สัญญาณ GPS ยังไม่ชัด ')+'— ลืมเช็คเอาท์ใช่มั้ยคะ กดยืนยันได้เลย ระบบจะบันทึกตำแหน่งนี้ไว้ให้ค่ะ'},
+    failLocate:'หาตำแหน่งไม่สำเร็จ', failSave:'บันทึกไม่สำเร็จ',
+    errOutFence:function(d){return 'อยู่นอกพื้นที่ที่อนุญาต (ห่าง '+d+')'},
+    errLowAcc:'สัญญาณ GPS อ่อนเกินไป กรุณาลองใหม่กลางแจ้ง', errDup:'วันนี้บันทึกไปแล้ว',
+    errNotLinked:'ยังไม่ได้ผูกบัญชีพนักงาน', errTryAgain:'กรุณาลองใหม่อีกครั้ง',
+    errNetSave:'กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่',
+    gpsUnsupported:'อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง', gpsFailRetry:'หาตำแหน่งไม่สำเร็จ กรุณาลองใหม่กลางแจ้ง',
+    gpsDenied:'ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาเปิดสิทธิ์ให้ LINE ในตั้งค่าเครื่อง',
+    gpsUnavail:'ไม่สามารถระบุตำแหน่งได้ กรุณาเปิด GPS แล้วลองใหม่',
+    gpsTimeout:'หาตำแหน่งนานเกินไป กรุณาลองใหม่กลางแจ้ง', gpsProblem:'เกิดปัญหาในการระบุตำแหน่ง',
+    welcome:'ยินดีต้อนรับค่ะ 🎉', linked:'ผูกบัญชีเรียบร้อยแล้ว'
+  },
+  en:{
+    locating:'Finding your location', locatingHint:'Please stay outdoors or near a window for a better signal',
+    accNow:function(a){return 'Current accuracy ±'+a+' m'},
+    lblSite:'Location', lblDist:'Distance', lblAcc:'Accuracy', allow:function(x){return ' (limit '+x+')'},
+    badgeIn:'🟢 Check in', badgeOut:'🔴 Check out', btnConfirm:'Confirm', btnRetry:'Find location again',
+    saving:'Saving…', goCheckin:'Go to check-in', close:'Close', errRetry:'Try again',
+    checkedIn:'Checked in', checkedOut:'Checked out',
+    alreadyIn:'Already checked in today', alreadyOut:'Already checked out today', noRepeat:'No need to do it again',
+    doneDetail:function(site,d){return site+' · '+d+' away'}, unitM:'m', unitKm:'km',
+    weakGps:function(a){return 'GPS signal too weak (±'+a+' m). Please go outdoors and tap "Find location again".'},
+    outFence:function(d,name){return 'You are outside the allowed area ('+d+' away). Please come into '+name+'.'},
+    lenient:function(inF,d){return (!inF?'Outside the area ('+d+' away) ':'GPS not clear yet ')+"— forgot to check out? Just tap Confirm, we'll record this location for you."},
+    failLocate:'Could not find location', failSave:'Could not save',
+    errOutFence:function(d){return 'Outside the allowed area ('+d+' away)'},
+    errLowAcc:'GPS signal too weak. Please try again outdoors.', errDup:'Already recorded today',
+    errNotLinked:'Account not linked yet', errTryAgain:'Please try again',
+    errNetSave:'Please check your internet connection and try again',
+    gpsUnsupported:'This device does not support location', gpsFailRetry:'Could not find location. Please try again outdoors.',
+    gpsDenied:'Location permission denied. Please allow location for LINE in your device settings.',
+    gpsUnavail:'Location unavailable. Please turn on GPS and try again.',
+    gpsTimeout:'Location took too long. Please try again outdoors.', gpsProblem:'There was a problem finding your location',
+    welcome:'Welcome 🎉', linked:'account linked successfully'
+  }
+};
+function L(){return TT[app.lang]||TT.th}
+function applyStatic(){
+  var t=L();
+  states.locating.querySelector('h1').textContent=t.locating;
+  states.locating.querySelector('.muted').textContent=t.locatingHint;
+  var dts=states.ready.querySelectorAll('.facts dt');
+  if(dts[0])dts[0].textContent=t.lblSite; if(dts[1])dts[1].textContent=t.lblDist; if(dts[2])dts[2].textContent=t.lblAcc;
+  $('#btn-submit').textContent=t.btnConfirm; $('#btn-retry').textContent=t.btnRetry;
+  $('#btn-go-checkin').textContent=t.goCheckin; $('#btn-close').textContent=t.close;
+  $('#btn-err-close').textContent=t.close; $('#btn-err-retry').textContent=t.errRetry;
+}
 
 function qp(k){return new URLSearchParams(location.search).get(k)}
 
 /* ---------- GPS ---------- */
 function acquire(onProg){
   return new Promise(function(res,rej){
-    if(!navigator.geolocation){rej(new Error('อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง'));return}
+    if(!navigator.geolocation){rej(new Error(L().gpsUnsupported));return}
     var best=null,wid=null,tmr=null;
-    var fin=function(){if(wid!==null)navigator.geolocation.clearWatch(wid);if(tmr)clearTimeout(tmr);best?res(best):rej(new Error('หาตำแหน่งไม่สำเร็จ กรุณาลองใหม่กลางแจ้ง'))};
+    var fin=function(){if(wid!==null)navigator.geolocation.clearWatch(wid);if(tmr)clearTimeout(tmr);best?res(best):rej(new Error(L().gpsFailRetry))};
     wid=navigator.geolocation.watchPosition(function(p){
       if(!best||p.coords.accuracy<best.coords.accuracy){best=p;onProg&&onProg(p.coords.accuracy)}
       if(best.coords.accuracy<=CFG.ACCURACY_TARGET_M)fin();
     },function(e){
       if(best){fin();return}
       if(wid!==null)navigator.geolocation.clearWatch(wid);if(tmr)clearTimeout(tmr);
-      rej(new Error({1:'ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาเปิดสิทธิ์ให้ LINE ในตั้งค่าเครื่อง',2:'ไม่สามารถระบุตำแหน่งได้ กรุณาเปิด GPS แล้วลองใหม่',3:'หาตำแหน่งนานเกินไป กรุณาลองใหม่กลางแจ้ง'}[e.code]||'เกิดปัญหาในการระบุตำแหน่ง'));
+      var tl=L();
+      rej(new Error({1:tl.gpsDenied,2:tl.gpsUnavail,3:tl.gpsTimeout}[e.code]||tl.gpsProblem));
     },{enableHighAccuracy:true,timeout:CFG.GPS_TIMEOUT_MS,maximumAge:0});
     tmr=setTimeout(fin,CFG.GPS_TIMEOUT_MS);
   });
@@ -166,7 +228,7 @@ function boot(){
 
 function loadContext(){
   return api('context',{idToken:app.idToken}).then(function(ctx){
-    if(ctx.ok){app.ctx=ctx;return startCheckin()}
+    if(ctx.ok){app.ctx=ctx;app.lang=(ctx.employee&&ctx.employee.language==='en')?'en':'th';applyStatic();return startCheckin()}
     if(ctx.reason==='not_linked')return startRegister();
     if(ctx.reason==='no_worksite')return fail('ยังตั้งค่าไม่เสร็จ','ยังไม่ได้ตั้งพิกัดออฟฟิศในระบบ กรุณาแจ้งพี่นุชค่ะ');
     fail('ใช้งานไม่ได้',ctx.message||'กรุณาแจ้งพี่นุชค่ะ');
@@ -190,8 +252,9 @@ function doLink(){
   api('link',{idToken:app.idToken,empCode:$('#emp').value,pin:$('#pin').value,displayName:app.profileName,language:regLang}).then(function(r){
     if(!r.ok){show('register');$('#pin').value='';regValidate();
       regWarn({wrong_pin:'ชื่อหรือ PIN ไม่ถูกต้องค่ะ ลองตรวจดูอีกทีนะคะ',bad_pin_format:'PIN ต้องเป็นตัวเลข 6 หลักค่ะ',line_already_linked_to_other:'LINE นี้ผูกกับพนักงานคนอื่นไว้แล้วค่ะ รบกวนแจ้งพี่นุชนะคะ',invalid_token:'ยืนยันตัวตนไม่ผ่าน กรุณาเข้าใหม่ค่ะ'}[r.reason]||'ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่ค่ะ');return}
-    $('#done-title').textContent='ยินดีต้อนรับค่ะ 🎉';
-    $('#done-detail').textContent=(r.employee&&r.employee.name?r.employee.name+' ':'')+'ผูกบัญชีเรียบร้อยแล้ว';
+    app.lang=regLang==='en'?'en':'th';applyStatic();var t=L();
+    $('#done-title').textContent=t.welcome;
+    $('#done-detail').textContent=(r.employee&&r.employee.name?r.employee.name+' ':'')+t.linked;
     $('#done-clock').classList.add('hidden');$('#btn-go-checkin').classList.remove('hidden');
     show('done');
   }).catch(function(){show('register');regWarn('เชื่อมต่อไม่ได้ กรุณาลองใหม่ค่ะ')});
@@ -204,42 +267,45 @@ function startCheckin(){
   else app.type=(app.ctx.today&&app.ctx.today.checkIn)?'check_out':'check_in';
   var already=app.type==='check_in'?(app.ctx.today&&app.ctx.today.checkIn):(app.ctx.today&&app.ctx.today.checkOut);
   if(already){
-    $('#done-title').textContent=app.type==='check_in'?'วันนี้เช็คอินแล้ว':'วันนี้เช็คเอาท์แล้ว';
+    var t=L();
+    $('#done-title').textContent=app.type==='check_in'?t.alreadyIn:t.alreadyOut;
     $('#done-clock').textContent=fmtTime(new Date(already));$('#done-clock').classList.remove('hidden');
-    $('#done-detail').textContent='ไม่ต้องทำซ้ำ';$('#btn-go-checkin').classList.add('hidden');show('done');return;
+    $('#done-detail').textContent=t.noRepeat;$('#btn-go-checkin').classList.add('hidden');show('done');return;
   }
   return locate();
 }
 function locate(){
   show('locating');$('#loc-acc').textContent='';
-  return acquire(function(a){$('#loc-acc').textContent='ความแม่นยำขณะนี้ ±'+Math.round(a)+' ม.'}).then(function(pos){app.pos=pos;renderReady()}).catch(function(e){fail('หาตำแหน่งไม่สำเร็จ',e.message)});
+  return acquire(function(a){$('#loc-acc').textContent=L().accNow(Math.round(a))}).then(function(pos){app.pos=pos;renderReady()}).catch(function(e){fail(L().failLocate,e.message)});
 }
 function renderReady(){
+  var t=L();
   var c=app.pos.coords,s=app.ctx.worksite,d=distM(c.latitude,c.longitude,s.lat,s.lng),inF=d<=s.radiusM,accOk=c.accuracy<=CFG.ACCURACY_MAX_M;
-  $('#rd-badge').textContent=app.type==='check_in'?'🟢 เช็คอิน':'🔴 เช็คเอาท์';
+  $('#rd-badge').textContent=app.type==='check_in'?t.badgeIn:t.badgeOut;
   $('#rd-name').textContent=app.ctx.employee.name;$('#rd-clock').textContent=fmtTime(new Date());
-  $('#rd-site').textContent=s.name;$('#rd-dist').textContent=fmtM(d)+' (อนุญาต '+fmtM(s.radiusM)+')';$('#rd-acc').textContent='±'+Math.round(c.accuracy)+' ม.';
+  $('#rd-site').textContent=s.name;$('#rd-dist').textContent=fmtM(d)+t.allow(fmtM(s.radiusM));$('#rd-acc').textContent='±'+Math.round(c.accuracy)+' '+t.unitM;
   var w=$('#rd-warn'),b=$('#btn-submit'),blk=null;
-  if(!accOk)blk='สัญญาณ GPS อ่อนเกินไป (±'+Math.round(c.accuracy)+' ม.) กรุณาออกไปกลางแจ้งแล้วกด "หาตำแหน่งใหม่"';
-  else if(!inF)blk='คุณอยู่นอกพื้นที่ที่อนุญาต (ห่าง '+fmtM(d)+') กรุณาเข้ามาในบริเวณ'+s.name;
+  if(!accOk)blk=t.weakGps(Math.round(c.accuracy));
+  else if(!inF)blk=t.outFence(fmtM(d),s.name);
   // เคส "ลืมเช็คเอาท์" (engine ยืนยันผ่าน ctx.lateCheckout) → ไม่บล็อก แค่เตือนว่าจะบันทึกพิกัดไว้
   var lenient=app.type==='check_out'&&app.ctx&&app.ctx.lateCheckout;
   if(blk){
     if(lenient){
-      w.textContent=(!inF?'อยู่นอกพื้นที่ (ห่าง '+fmtM(d)+') ':'สัญญาณ GPS ยังไม่ชัด ')+'— ลืมเช็คเอาท์ใช่มั้ยคะ กดยืนยันได้เลย ระบบจะบันทึกตำแหน่งนี้ไว้ให้ค่ะ';
+      w.textContent=t.lenient(inF,fmtM(d));
       w.classList.remove('hidden');b.disabled=false;
     }else{w.textContent=blk;w.classList.remove('hidden');b.disabled=true}
   }else{w.classList.add('hidden');b.disabled=false}
   show('ready');
 }
 function submitAtt(){
-  $('#busy-msg').textContent='กำลังบันทึก…';show('busy');var c=app.pos.coords;
+  var t=L();
+  $('#btn-submit').disabled=true;$('#busy-msg').textContent=t.saving;show('busy');var c=app.pos.coords;
   api('attendance',{idToken:app.idToken,type:app.type,lat:c.latitude,lng:c.longitude,accuracy:c.accuracy,clientTs:new Date().toISOString(),ua:navigator.userAgent.slice(0,200)}).then(function(r){
-    if(!r.ok){fail('บันทึกไม่สำเร็จ',{out_of_fence:'อยู่นอกพื้นที่ที่อนุญาต (ห่าง '+fmtM(r.distanceM)+')',low_accuracy:'สัญญาณ GPS อ่อนเกินไป กรุณาลองใหม่กลางแจ้ง',duplicate:'วันนี้บันทึกไปแล้ว',not_linked:'ยังไม่ได้ผูกบัญชีพนักงาน'}[r.reason]||r.message||'กรุณาลองใหม่อีกครั้ง');return}
-    $('#done-title').textContent=app.type==='check_in'?'เช็คอินเรียบร้อย':'เช็คเอาท์เรียบร้อย';
+    if(!r.ok){fail(t.failSave,{out_of_fence:t.errOutFence(fmtM(r.distanceM)),low_accuracy:t.errLowAcc,duplicate:t.errDup,not_linked:t.errNotLinked}[r.reason]||r.message||t.errTryAgain);return}
+    $('#done-title').textContent=app.type==='check_in'?t.checkedIn:t.checkedOut;
     $('#done-clock').textContent=fmtTime(new Date(r.ts));$('#done-clock').classList.remove('hidden');
-    $('#done-detail').textContent=r.worksiteName+' · ห่าง '+fmtM(r.distanceM);$('#btn-go-checkin').classList.add('hidden');show('done');
-  }).catch(function(){fail('บันทึกไม่สำเร็จ','กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่')});
+    $('#done-detail').textContent=t.doneDetail(r.worksiteName,fmtM(r.distanceM));$('#btn-go-checkin').classList.add('hidden');show('done');
+  }).catch(function(){fail(t.failSave,t.errNetSave)});
 }
 
 function closeWin(){liff.isInClient()?liff.closeWindow():window.close()}
