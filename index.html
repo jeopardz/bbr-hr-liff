@@ -222,7 +222,14 @@ function renderReady(){
   var w=$('#rd-warn'),b=$('#btn-submit'),blk=null;
   if(!accOk)blk='สัญญาณ GPS อ่อนเกินไป (±'+Math.round(c.accuracy)+' ม.) กรุณาออกไปกลางแจ้งแล้วกด "หาตำแหน่งใหม่"';
   else if(!inF)blk='คุณอยู่นอกพื้นที่ที่อนุญาต (ห่าง '+fmtM(d)+') กรุณาเข้ามาในบริเวณ'+s.name;
-  if(blk){w.textContent=blk;w.classList.remove('hidden');b.disabled=true}else{w.classList.add('hidden');b.disabled=false}
+  // เคส "ลืมเช็คเอาท์" (engine ยืนยันผ่าน ctx.lateCheckout) → ไม่บล็อก แค่เตือนว่าจะบันทึกพิกัดไว้
+  var lenient=app.type==='check_out'&&app.ctx&&app.ctx.lateCheckout;
+  if(blk){
+    if(lenient){
+      w.textContent=(!inF?'อยู่นอกพื้นที่ (ห่าง '+fmtM(d)+') ':'สัญญาณ GPS ยังไม่ชัด ')+'— ลืมเช็คเอาท์ใช่มั้ยคะ กดยืนยันได้เลย ระบบจะบันทึกตำแหน่งนี้ไว้ให้ค่ะ';
+      w.classList.remove('hidden');b.disabled=false;
+    }else{w.textContent=blk;w.classList.remove('hidden');b.disabled=true}
+  }else{w.classList.add('hidden');b.disabled=false}
   show('ready');
 }
 function submitAtt(){
