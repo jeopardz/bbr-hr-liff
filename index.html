@@ -23,6 +23,9 @@ h1{font-size:1.25rem;font-weight:700;margin:8px 0 4px;line-height:1.35}
 .field{text-align:left;margin:0 0 16px}.field label{display:block;font-size:.85rem;font-weight:600;margin:0 0 6px}
 .field select,.field input{width:100%;padding:13px 14px;font-size:1rem;font-family:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
 .field input{letter-spacing:.3em;text-align:center;font-size:1.4rem}.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
+.langsel{display:flex;gap:10px}
+.langbtn{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);font-size:1rem;font-family:inherit;cursor:pointer}
+.langbtn.active{border-color:var(--brand);background:rgba(6,199,85,.1);color:var(--brand);font-weight:700}
 .btn{display:block;width:100%;border:0;border-radius:12px;padding:15px;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background .15s,opacity .15s}
 .btn+.btn{margin-top:10px}.btn.primary{background:var(--brand);color:#fff}.btn.primary:active:not(:disabled){background:var(--brand2)}
 .btn.primary:disabled{opacity:.4;cursor:not-allowed}.btn.ghost{background:transparent;color:var(--muted);font-weight:600}.btn.ghost:active{background:var(--bg)}
@@ -37,12 +40,18 @@ h1{font-size:1.25rem;font-weight:700;margin:8px 0 4px;line-height:1.35}
   <section class="card" data-state="init"><div class="spinner"></div><p class="muted">กำลังเตรียมระบบ…</p></section>
 
   <section class="card hidden" data-state="register">
-    <h1>ลงทะเบียนพนักงาน</h1>
-    <p class="muted">ผูกบัญชี LINE นี้เข้ากับชื่อของคุณ<br>ทำครั้งเดียวต่อเครื่องค่ะ</p>
-    <div class="field"><label for="emp">คุณคือใครคะ</label><select id="emp"><option value="">— เลือกชื่อ —</option></select></div>
-    <div class="field"><label for="pin">PIN 6 หลัก</label><input id="pin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off"><p class="hint">PIN ที่พี่นุชให้ไว้ค่ะ</p></div>
+    <h1>ลงทะเบียนพนักงาน<br><span style="font-size:.7em;font-weight:400;color:var(--muted)">Register</span></h1>
+    <p class="muted">ผูกบัญชี LINE นี้เข้ากับชื่อของคุณ · ทำครั้งเดียวต่อเครื่อง<br>Link this LINE to your name (once per device)</p>
+    <div class="field"><label for="emp">คุณคือใครคะ / Who are you?</label><select id="emp"><option value="">— เลือกชื่อ / Select —</option></select></div>
+    <div class="field"><label for="pin">PIN 6 หลัก / 6-digit PIN</label><input id="pin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off"><p class="hint">PIN ที่พี่นุชให้ไว้ / from P Nuch</p></div>
+    <div class="field"><label>ภาษา / Language</label>
+      <div class="langsel">
+        <button type="button" class="langbtn active" data-lang="th">ไทย</button>
+        <button type="button" class="langbtn" data-lang="en">English</button>
+      </div>
+    </div>
     <p class="warn hidden" id="reg-warn"></p>
-    <button class="btn primary" id="btn-link" disabled>ลงทะเบียน</button>
+    <button class="btn primary" id="btn-link" disabled>ลงทะเบียน / Register</button>
   </section>
 
   <section class="card hidden" data-state="locating"><div class="spinner"></div><h1>กำลังหาตำแหน่ง</h1><p class="muted">กรุณาอยู่กลางแจ้งหรือใกล้หน้าต่างเพื่อให้สัญญาณดีขึ้น</p><p class="accuracy" id="loc-acc"></p></section>
@@ -171,9 +180,10 @@ function startRegister(){
     show('register');
   }).catch(function(){fail('เชื่อมต่อระบบไม่ได้','กรุณาลองใหม่อีกครั้งค่ะ')});
 }
+var regLang='th';
 function doLink(){
-  regWarn('');$('#busy-msg').textContent='กำลังตรวจสอบ…';show('busy');
-  api('link',{idToken:app.idToken,empCode:$('#emp').value,pin:$('#pin').value,displayName:app.profileName}).then(function(r){
+  regWarn('');$('#busy-msg').textContent='กำลังตรวจสอบ… / Checking…';show('busy');
+  api('link',{idToken:app.idToken,empCode:$('#emp').value,pin:$('#pin').value,displayName:app.profileName,language:regLang}).then(function(r){
     if(!r.ok){show('register');$('#pin').value='';regValidate();
       regWarn({wrong_pin:'ชื่อหรือ PIN ไม่ถูกต้องค่ะ ลองตรวจดูอีกทีนะคะ',bad_pin_format:'PIN ต้องเป็นตัวเลข 6 หลักค่ะ',line_already_linked_to_other:'LINE นี้ผูกกับพนักงานคนอื่นไว้แล้วค่ะ รบกวนแจ้งพี่นุชนะคะ',invalid_token:'ยืนยันตัวตนไม่ผ่าน กรุณาเข้าใหม่ค่ะ'}[r.reason]||'ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่ค่ะ');return}
     $('#done-title').textContent='ยินดีต้อนรับค่ะ 🎉';
@@ -223,6 +233,10 @@ function submitAtt(){
 
 function closeWin(){liff.isInClient()?liff.closeWindow():window.close()}
 
+document.querySelectorAll('.langbtn').forEach(function(b){b.addEventListener('click',function(){
+  document.querySelectorAll('.langbtn').forEach(function(x){x.classList.remove('active')});
+  b.classList.add('active');regLang=b.dataset.lang;
+});});
 $('#emp').addEventListener('change',regValidate);
 $('#pin').addEventListener('input',function(e){e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);regWarn('');regValidate()});
 $('#btn-link').addEventListener('click',doLink);
