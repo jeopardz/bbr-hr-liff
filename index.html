@@ -22,8 +22,9 @@ h1{font-size:1.25rem;font-weight:700;margin:8px 0 4px;line-height:1.35}
 .accuracy{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums;min-height:1.3em}
 .warn{background:var(--warn-bg);color:var(--warn-fg);font-size:.875rem;line-height:1.6;text-align:left;padding:12px 14px;border-radius:10px;margin:0 0 16px}
 .field{text-align:left;margin:0 0 16px}.field label{display:block;font-size:.85rem;font-weight:600;margin:0 0 6px}
-.field select,.field input{width:100%;padding:13px 14px;font-size:1rem;font-family:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
-.field input{letter-spacing:.3em;text-align:center;font-size:1.4rem}.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
+  .field select,.field input{width:100%;padding:13px 14px;font-size:1rem;font-family:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
+  .field input{letter-spacing:.3em;text-align:center;font-size:1.4rem}.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
+  .field input.note-input{letter-spacing:normal;text-align:left;font-size:1rem;margin-top:10px}
 .langsel{display:flex;gap:10px}
 .langbtn{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);font-size:1rem;font-family:inherit;cursor:pointer}
 .langbtn.active{border-color:var(--brand);background:rgba(6,199,85,.1);color:var(--brand);font-weight:700}
@@ -65,6 +66,12 @@ h1{font-size:1.25rem;font-weight:700;margin:8px 0 4px;line-height:1.35}
     <h1 id="rd-name">—</h1><div class="clock" id="rd-clock">--:--</div>
     <dl class="facts"><div><dt>สถานที่</dt><dd id="rd-site">—</dd></div><div><dt>ระยะห่าง</dt><dd id="rd-dist">—</dd></div><div><dt>ความแม่นยำ</dt><dd id="rd-acc">—</dd></div></dl>
     <p class="warn hidden" id="rd-warn"></p>
+    <div class="field hidden" id="att-reason-field">
+      <label id="att-reason-label" for="att-reason">กรุณาระบุเหตุผล</label>
+      <select id="att-reason"></select>
+      <input class="note-input" id="att-reason-note" type="text" maxlength="500" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)">
+      <p class="hint" id="att-reason-hint">ระบบจะเก็บเหตุผลนี้ให้ HR ตรวจสอบ</p>
+    </div>
     <button class="btn primary" id="btn-submit">ยืนยัน</button>
     <button class="btn ghost" id="btn-retry">หาตำแหน่งใหม่</button>
   </section>
@@ -122,7 +129,7 @@ function api(action,body){
     .catch(function(){return delay(1400).then(once)});
 }
 
-var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null,lang:'th'};
+var app={idToken:null,profileName:null,ctx:null,type:'check_in',pos:null,lang:'th',reasonCode:'',reasonNote:'',gpsBlocked:false};
 
 /* ===== i18n — หน้า check-in ตอบตามภาษาที่พนักงานเลือก (มาจาก context) ===== */
 var TT={
@@ -131,6 +138,11 @@ var TT={
     accNow:function(a){return 'ความแม่นยำขณะนี้ ±'+a+' ม.'},
     lblSite:'สถานที่', lblDist:'ระยะห่าง', lblAcc:'ความแม่นยำ', allow:function(x){return ' (อนุญาต '+x+')'},
     badgeIn:'🟢 เช็คอิน', badgeOut:'🔴 เช็คเอาท์', btnConfirm:'ยืนยัน', btnRetry:'หาตำแหน่งใหม่',
+    lateReason:'เลยเวลาเริ่มงานแล้ว กรุณาระบุเหตุผล', afterReason:'ออกหลังเวลาแล้ว กรุณาระบุเหตุผล',
+    chooseReason:'— เลือกเหตุผล —', reasonNote:'รายละเอียดเพิ่มเติม (ถ้ามี)',
+    reasonHint:'ระบบจะเก็บเหตุผลนี้ให้ HR ตรวจสอบ · หากเลือก “อื่นๆ” ต้องใส่รายละเอียด',
+    reasonsIn:[['late_arrival','มาสาย'],['forgot_checkin','ลืมกดเช็คอิน'],['offsite_work','ทำงานนอกสถานที่'],['other','อื่นๆ']],
+    reasonsOut:[['overtime','ทำ OT (รอ HR/หัวหน้ารับรอง)'],['forgot_checkout','ลืมกดเช็คเอาท์'],['closing_work','ปิดงาน/เคลียร์งานช้า'],['other','อื่นๆ']],
     saving:'กำลังบันทึก…', goCheckin:'ไปหน้าลงเวลา', close:'ปิดหน้าต่าง', errRetry:'ลองใหม่',
     checkedIn:'เช็คอินเรียบร้อย', checkedOut:'เช็คเอาท์เรียบร้อย',
     alreadyIn:'วันนี้เช็คอินแล้ว', alreadyOut:'วันนี้เช็คเอาท์แล้ว', noRepeat:'ไม่ต้องทำซ้ำ',
@@ -142,6 +154,7 @@ var TT={
     errOutFence:function(d){return 'อยู่นอกพื้นที่ที่อนุญาต (ห่าง '+d+')'},
     errLowAcc:'สัญญาณ GPS อ่อนเกินไป กรุณาลองใหม่กลางแจ้ง', errDup:'วันนี้บันทึกไปแล้ว',
     errNotLinked:'ยังไม่ได้ผูกบัญชีพนักงาน', errTryAgain:'กรุณาลองใหม่อีกครั้ง',
+    errReasonRequired:'เลยเวลาปกติแล้ว กรุณาระบุเหตุผลก่อนบันทึก',
     errNetSave:'กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่',
     gpsUnsupported:'อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง', gpsFailRetry:'หาตำแหน่งไม่สำเร็จ กรุณาลองใหม่กลางแจ้ง',
     gpsDenied:'ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาเปิดสิทธิ์ให้ LINE ในตั้งค่าเครื่อง',
@@ -154,6 +167,11 @@ var TT={
     accNow:function(a){return 'Current accuracy ±'+a+' m'},
     lblSite:'Location', lblDist:'Distance', lblAcc:'Accuracy', allow:function(x){return ' (limit '+x+')'},
     badgeIn:'🟢 Check in', badgeOut:'🔴 Check out', btnConfirm:'Confirm', btnRetry:'Find location again',
+    lateReason:'It is past your start time. Please select a reason', afterReason:'It is after work hours. Please select a reason',
+    chooseReason:'— Select a reason —', reasonNote:'Additional details (optional)',
+    reasonHint:'HR can review this reason. Details are required when “Other” is selected.',
+    reasonsIn:[['late_arrival','Arrived late'],['forgot_checkin','Forgot to check in'],['offsite_work','Working off-site'],['other','Other']],
+    reasonsOut:[['overtime','Overtime (pending approval)'],['forgot_checkout','Forgot to check out'],['closing_work','Closing/finishing work'],['other','Other']],
     saving:'Saving…', goCheckin:'Go to check-in', close:'Close', errRetry:'Try again',
     checkedIn:'Checked in', checkedOut:'Checked out',
     alreadyIn:'Already checked in today', alreadyOut:'Already checked out today', noRepeat:'No need to do it again',
@@ -165,6 +183,7 @@ var TT={
     errOutFence:function(d){return 'Outside the allowed area ('+d+' away)'},
     errLowAcc:'GPS signal too weak. Please try again outdoors.', errDup:'Already recorded today',
     errNotLinked:'Account not linked yet', errTryAgain:'Please try again',
+    errReasonRequired:'It is outside normal hours. Please select a reason before saving.',
     errNetSave:'Please check your internet connection and try again',
     gpsUnsupported:'This device does not support location', gpsFailRetry:'Could not find location. Please try again outdoors.',
     gpsDenied:'Location permission denied. Please allow location for LINE in your device settings.',
@@ -181,11 +200,40 @@ function applyStatic(){
   var dts=states.ready.querySelectorAll('.facts dt');
   if(dts[0])dts[0].textContent=t.lblSite; if(dts[1])dts[1].textContent=t.lblDist; if(dts[2])dts[2].textContent=t.lblAcc;
   $('#btn-submit').textContent=t.btnConfirm; $('#btn-retry').textContent=t.btnRetry;
+  $('#att-reason-note').placeholder=t.reasonNote; $('#att-reason-hint').textContent=t.reasonHint;
   $('#btn-go-checkin').textContent=t.goCheckin; $('#btn-close').textContent=t.close;
   $('#btn-err-close').textContent=t.close; $('#btn-err-retry').textContent=t.errRetry;
 }
 
 function qp(k){return new URLSearchParams(location.search).get(k)}
+
+function currentTiming(){
+  if(!app.ctx||!app.ctx.timing)return null;
+  return app.type==='check_in'?app.ctx.timing.checkIn:app.ctx.timing.checkOut;
+}
+// โหมด check-in only: เช็คเอาท์ไม่ต้องเลือกเหตุผล (กดปุ่มเดียวจบ)
+function reasonNeeded(){
+  var timing=currentTiming();
+  if(!timing||!timing.reasonRequired)return false;
+  if(app.type==='check_out'&&app.ctx&&app.ctx.autoCheckout)return false;
+  return true;
+}
+function renderReasonField(){
+  var t=L(),field=$('#att-reason-field'),sel=$('#att-reason');
+  if(!reasonNeeded()){field.classList.add('hidden');app.reasonCode='';app.reasonNote='';return}
+  field.classList.remove('hidden');
+  $('#att-reason-label').textContent=app.type==='check_in'?t.lateReason:t.afterReason;
+  var chosen=app.reasonCode||sel.value||'';sel.innerHTML='';
+  var empty=document.createElement('option');empty.value='';empty.textContent=t.chooseReason;sel.appendChild(empty);
+  (app.type==='check_in'?t.reasonsIn:t.reasonsOut).forEach(function(x){var o=document.createElement('option');o.value=x[0];o.textContent=x[1];sel.appendChild(o)});
+  sel.value=chosen;app.reasonCode=sel.value;$('#att-reason-note').value=app.reasonNote||'';
+}
+function reasonReady(){
+  if(!reasonNeeded())return true;
+  if(!app.reasonCode)return false;
+  return app.reasonCode!=='other'||!!String(app.reasonNote||'').trim();
+}
+function updateSubmitEnabled(){ $('#btn-submit').disabled=app.gpsBlocked||!reasonReady() }
 
 /* ---------- GPS ---------- */
 function acquire(onProg){
@@ -284,24 +332,29 @@ function renderReady(){
   $('#rd-badge').textContent=app.type==='check_in'?t.badgeIn:t.badgeOut;
   $('#rd-name').textContent=app.ctx.employee.name;$('#rd-clock').textContent=fmtTime(new Date());
   $('#rd-site').textContent=s.name;$('#rd-dist').textContent=fmtM(d)+t.allow(fmtM(s.radiusM));$('#rd-acc').textContent='±'+Math.round(c.accuracy)+' '+t.unitM;
+  renderReasonField();
   var w=$('#rd-warn'),b=$('#btn-submit'),blk=null;
   if(!accOk)blk=t.weakGps(Math.round(c.accuracy));
   else if(!inF)blk=t.outFence(fmtM(d),s.name);
-  // เคส "ลืมเช็คเอาท์" (engine ยืนยันผ่าน ctx.lateCheckout) → ไม่บล็อก แค่เตือนว่าจะบันทึกพิกัดไว้
-  var lenient=app.type==='check_out'&&app.ctx&&app.ctx.lateCheckout;
+  // ผ่อน geofence: (1) โหมด auto = เช็คเอาท์ผ่านเสมอ  (2) เดิม = เลยเกณฑ์ + เลือก "ลืมเช็คเอาท์"
+  var lenient=app.type==='check_out'&&app.ctx&&(app.ctx.autoCheckout||(app.ctx.lateCheckout&&app.reasonCode==='forgot_checkout'));
   if(blk){
     if(lenient){
       w.textContent=t.lenient(inF,fmtM(d));
-      w.classList.remove('hidden');b.disabled=false;
-    }else{w.textContent=blk;w.classList.remove('hidden');b.disabled=true}
-  }else{w.classList.add('hidden');b.disabled=false}
+      w.classList.remove('hidden');app.gpsBlocked=false;
+    }else{w.textContent=blk;w.classList.remove('hidden');app.gpsBlocked=true}
+  }else{w.classList.add('hidden');app.gpsBlocked=false}
+  updateSubmitEnabled();
   show('ready');
 }
 function submitAtt(){
   var t=L();
   $('#btn-submit').disabled=true;$('#busy-msg').textContent=t.saving;show('busy');var c=app.pos.coords;
-  api('attendance',{idToken:app.idToken,type:app.type,lat:c.latitude,lng:c.longitude,accuracy:c.accuracy,clientTs:new Date().toISOString(),ua:navigator.userAgent.slice(0,200)}).then(function(r){
-    if(!r.ok){fail(t.failSave,{out_of_fence:t.errOutFence(fmtM(r.distanceM)),low_accuracy:t.errLowAcc,duplicate:t.errDup,not_linked:t.errNotLinked}[r.reason]||r.message||t.errTryAgain);return}
+  api('attendance',{idToken:app.idToken,type:app.type,lat:c.latitude,lng:c.longitude,accuracy:c.accuracy,
+    reasonCode:app.reasonCode||null,reasonNote:String(app.reasonNote||'').trim()||null,
+    clientTs:new Date().toISOString(),ua:navigator.userAgent.slice(0,200)}).then(function(r){
+    if(!r.ok){fail(t.failSave,{out_of_fence:t.errOutFence(fmtM(r.distanceM)),low_accuracy:t.errLowAcc,duplicate:t.errDup,not_linked:t.errNotLinked,
+      reason_required:t.errReasonRequired,invalid_attendance_reason:t.errReasonRequired,reason_note_required:t.errReasonRequired}[r.reason]||r.message||t.errTryAgain);return}
     $('#done-title').textContent=app.type==='check_in'?t.checkedIn:t.checkedOut;
     $('#done-clock').textContent=fmtTime(new Date(r.ts));$('#done-clock').classList.remove('hidden');
     $('#done-detail').textContent=t.doneDetail(r.worksiteName,fmtM(r.distanceM));$('#btn-go-checkin').classList.add('hidden');show('done');
@@ -318,6 +371,8 @@ $('#emp').addEventListener('change',regValidate);
 $('#pin').addEventListener('input',function(e){e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);regWarn('');regValidate()});
 $('#btn-link').addEventListener('click',doLink);
 $('#btn-submit').addEventListener('click',submitAtt);
+$('#att-reason').addEventListener('change',function(){app.reasonCode=this.value;renderReady()});
+$('#att-reason-note').addEventListener('input',function(){app.reasonNote=this.value;updateSubmitEnabled()});
 $('#btn-retry').addEventListener('click',locate);
 $('#btn-go-checkin').addEventListener('click',function(){loadContext()});
 $('#btn-close').addEventListener('click',closeWin);
