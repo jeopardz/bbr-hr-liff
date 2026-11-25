@@ -32,7 +32,7 @@
       font: inherit; font-weight: 600; cursor: pointer; }
     button:disabled { opacity: 0.55; cursor: wait; }
     button:focus-visible { outline: 3px solid #176caa; outline-offset: 3px; }
-    #more { margin-top: 1rem; }
+    #more, .rma-more { margin-top: 1rem; }
   </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
@@ -128,7 +128,7 @@
         ui.report.append(element('h2', label));
         const body = table(ui.report, 'rma', ['Month', 'Total', 'P', 'F',
           'P% (± pts vs last month)', 'F% (± pts vs last month)']);
-        rows.forEach((row, index) => {
+        const months = rows.map((row, index) => {
           const tr = element('tr');
           const label = enMonth.format(new Date(row.month + '-01T00:00:00Z'))
             + (index === 0 ? family === 'RAM' && data.adviceFullMonth ? ' (full)' : ' MTD' : '');
@@ -140,8 +140,19 @@
           metric(fail, row.failRate, row.failPts, ' pts', -1, true);
           const panels = [row.total, row.pass, row.fail].map(n => element('td', n == null ? dash : enNumber.format(n)));
           tr.append(month, ...panels, pass, fail);
-          body.append(tr);
+          return tr;
         });
+        body.append(...months.slice(0, 4));
+        const olderRows = months.slice(4);
+        if (olderRows.length) {
+          const more = element('button', 'View more', 'rma-more');
+          more.type = 'button';
+          more.addEventListener('click', () => {
+            body.append(...olderRows);
+            more.hidden = true;
+          }, { once: true });
+          ui.report.append(more);
+        }
       }
       ui.report.append(element('p', 'Total is in panels. Advice totals include ND and out-of-warranty panels. Through July 2026, Advice also included MicroSD.', 'note'));
       ui.status.textContent = '';
