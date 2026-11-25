@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>BBR Manager Report</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.45 system-ui, sans-serif; color: #182822; background: #f4f7f5; }
+    body { margin: 0; }
+    main { max-width: 48rem; margin: auto; padding: 1rem 0.75rem 2rem; }
+    header { background: #14532d; color: #fff; border-radius: 0.8rem; padding: 1rem; }
+    h1 { font-size: 1.3rem; line-height: 1.25; margin: 0; }
+    header p { margin: 0.4rem 0 0; color: #dcfce7; font-size: 0.88rem; }
+    h2 { font-size: 1rem; margin: 1.2rem 0 0.45rem; }
+    #status, .note { color: #485950; font-size: 0.86rem; }
+    .report-table { border-radius: 0.7rem; border: 1px solid #dce6df; background: #fff; overflow: hidden; }
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 0.85rem;
+      font-variant-numeric: tabular-nums; }
+    th, td { text-align: center; vertical-align: top; padding: 0.55rem 0.2rem; overflow-wrap: anywhere; }
+    thead th { color: #31473b; background: #e7f1ea; font-size: 0.72rem; }
+    tbody tr + tr { border-top: 1px solid #e5ebe7; }
+    th:first-child, td:first-child { text-align: start; padding-left: 0.45rem; }
+    .aging th:first-child { width: 34%; }
+    .rma th:first-child { width: 21%; }
+    .rma .panels { width: 9%; }
+    .detail, .comparison { display: block; font-size: 0.76rem; }
+    .detail, .comparison { color: #485950; }
+    .positive { color: #15803d; }
+    .negative { color: #b91c1c; }
+    button { border: 0; border-radius: 0.5rem; padding: 0.7rem 1rem; color: white; background: #14532d;
+      font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    button:focus-visible { outline: 3px solid #176caa; outline-offset: 3px; }
+    #more { margin-top: 1rem; }
+  </style>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 id="title">Manager Report</h1>
+      <p id="period" hidden></p>
+    </header>
+    <p id="status" aria-live="polite">Opening report…</p>
+    <div id="report"></div>
+    <button type="button" id="more" hidden>Load more</button>
+  </main>
+  <script>
+    'use strict';
+
+    const LIFF_ID = '2010765938-UTJZYzL0';
+    const API_URL = 'https://n8n.bbr-backend.com/webhook/hr-api';
+    const ui = Object.fromEntries(['title', 'period', 'status', 'report', 'more']
+      .map(id => [id, document.getElementById(id)]));
+    const enNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const enMonth = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const dash = '–';
+
+    function element(tag, text, className) {
+      const node = document.createElement(tag);
+      if (text != null) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function table(where, kind, headers) {
+      const box = element('div', null, 'report-table');
+      const grid = element('table', null, kind);
+      const head = element('thead'), tr = element('tr'), body = element('tbody');
+      for (const label of headers) {
+        const cell = element('th', label, ['Total', 'P', 'F'].includes(label) ? 'panels' : null);
+        cell.scope = 'col';
+        tr.append(cell);
+      }
+      head.append(tr);
+      grid.append(head, body);
+      box.append(grid);
+      where.append(box);
+      return body;
+    }
+
+    function metric(cell, value, delta, unit, direction, rate = false) {
+      cell.textContent = value == null ? dash : rate ? value.toFixed(1) + '%' : enNumber.format(value);
+      let text = dash, tone = '';
+      if (delta === 'new') {
+        text = delta;
+        tone = direction > 0 ? 'positive' : 'negative';
+      } else if (delta != null) {
+        const magnitude = Math.abs(delta).toFixed(1);
+        const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+        text = sign + magnitude + unit;
+        if (sign) tone = delta * direction > 0 ? 'positive' : 'negative';
+      }
+      cell.append(element('small', text, 'comparison ' + tone));
+    }
+
+    async function getReport(view, week, after) {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error('invalid_token');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      try {
+        const input = { action: 'report_detail', idToken, view, week };
+        if (after !== undefined) input.after = after;
+        const response = await fetch(API_URL, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify(input), cache: 'no-store', credentials: 'omit',
+          redirect: 'error', signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('unavailable');
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.reason);
+        return data;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function showPeriod(text) {
+      ui.period.textContent = text;
+      ui.period.hidden = false;
+    }
+
+    function renderRma(data) {
+      showPeriod(data.sourceTimes.join(' | '));
+      for (const { family, label, rows } of data.families) {
+        ui.report.append(element('h2', label));
+        const body = table(ui.report, 'rma', ['Month', 'Total', 'P', 'F',
+          'P% (± pts vs last month)', 'F% (± pts vs last month)']);
+        rows.forEach((row, index) => {
+          const tr = element('tr');
+          const label = enMonth.format(new Date(row.month + '-01T00:00:00Z'))
+            + (index === 0 ? family === 'RAM' && data.adviceFullMonth ? ' (full)' : ' MTD' : '');
+          const month = element('th', label);
+          month.scope = 'row';
+          if (row.notes.length) month.append(element('small', row.notes.join(' · '), 'detail'));
+          const pass = element('td'), fail = element('td');
+          metric(pass, row.passRate, row.passPts, ' pts', 1, true);
+          metric(fail, row.failRate, row.failPts, ' pts', -1, true);
+          const panels = [row.total, row.pass, row.fail].map(n => element('td', n == null ? dash : enNumber.format(n)));
+          tr.append(month, ...panels, pass, fail);
+          body.append(tr);
+        });
+      }
+      ui.report.append(element('p', 'Total is in panels. Advice totals include ND and out-of-warranty panels. Through July 2026, Advice also included MicroSD.', 'note'));
+      ui.status.textContent = '';
+    }
+
+    function showError(error) {
+      const labels = {
+        invalid_token: 'Your LINE session has expired. Reopen the report from LINE.',
+        forbidden: 'Your LINE account does not have access to this report.',
+        report_disabled: 'Manager reports are unavailable.',
+        bad_view: 'This report link is invalid.',
+        bad_week: 'This report link is invalid.',
+        bad_cursor: 'This report page is invalid.',
+        changed: 'The comparison snapshot changed. Reopen the report to refresh the list.',
+      };
+      ui.status.textContent = labels[error.message] || 'Could not load the report. Try opening it again.';
+    }
+
+    function agingList(week) {
+      let body, asOf, prevAsOf, next;
+      async function load() {
+        ui.more.disabled = true;
+        ui.status.textContent = 'Loading…';
+        try {
+          const data = await getReport('aging', week, next);
+          if (!data.asOf || (body && (data.asOf !== asOf || data.prevAsOf !== prevAsOf))) {
+            ui.report.replaceChildren();
+            ui.period.hidden = true;
+            ui.more.hidden = true;
+            if (data.asOf) throw new Error('changed');
+            ui.status.textContent = data.status;
+            return;
+          }
+          if (!body) {
+            asOf = data.asOf;
+            prevAsOf = data.prevAsOf;
+            showPeriod(data.periodLabel);
+            body = table(ui.report, 'aging', ['SKU / Name', '≥60d units (± % vs last week)', '≥90d units (± % vs last week)']);
+          }
+          for (const row of data.rows) {
+            const tr = element('tr'), sku = element('th', row.sku), aged60 = element('td'), aged90 = element('td');
+            sku.scope = 'row';
+            if (row.name !== row.sku) sku.append(element('small', row.name, 'detail'));
+            metric(aged60, row.aged60, row.delta60, '%', -1);
+            metric(aged90, row.aged90, row.delta90, '%', -1);
+            tr.append(sku, aged60, aged90);
+            body.append(tr);
+          }
+          next = data.next;
+          ui.more.hidden = next === null;
+          ui.status.textContent = [data.status, !body.children.length && 'No aged stock.'].filter(Boolean).join(' · ');
+        } catch (error) {
+          if (['invalid_token', 'forbidden', 'report_disabled'].includes(error.message)) {
+            ui.report.replaceChildren();
+            ui.period.hidden = true;
+            ui.more.hidden = true;
+          }
+          showError(error);
+        } finally {
+          ui.more.disabled = false;
+        }
+      }
+      ui.more.addEventListener('click', load);
+      return load();
+    }
+
+    async function openReport() {
+      let timer;
+      try {
+        if (typeof liff === 'undefined') throw new Error('invalid_token');
+        await Promise.race([liff.init({ liffId: LIFF_ID }),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('unavailable')), 12000); })]);
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: location.href });
+          return;
+        }
+        const query = new URLSearchParams(location.search);
+        const [view, week] = [query.get('view'), query.get('week')];
+        if (query.getAll('view').length !== 1 || query.getAll('week').length !== 1
+            || !['aging', 'rma'].includes(view) || !/^\d{4}-\d\d-\d\d$/.test(week)) throw new Error('bad_view');
+        if (view === 'aging') {
+          ui.title.textContent = 'Aging (± vs last week)';
+          await agingList(week);
+        } else {
+          ui.title.textContent = 'RMA (± pts vs last month)';
+          renderRma(await getReport(view, week));
+        }
+      } catch (error) {
+        showError(error);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    openReport();
+  </script>
+</body>
+</html>
